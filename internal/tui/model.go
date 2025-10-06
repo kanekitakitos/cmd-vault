@@ -13,6 +13,13 @@ import (
 	"github.com/you/cmd-vault/internal/models"
 )
 
+type viewMode int
+
+const (
+	viewCommands viewMode = iota
+	viewTemplates
+)
+
 type state int
 
 const (
@@ -21,16 +28,22 @@ const (
 	stateEdit
 	stateConfirmDelete
 	stateHelp
+	stateConfirmCancel
 	stateRunningCmd
 )
 
 type model struct {
 	store    *db.Store
+	viewMode viewMode
 	commands []models.Command
 	selected int
 	width    int
 	height   int
 	state    state
+	previousState state
+
+	// file browser
+	files []os.DirEntry
 
 	// inputs for add/edit
 	nameInput textinput.Model
@@ -80,6 +93,7 @@ func initialModel(store *db.Store) model {
 		noteInput: note,
 	}
 	m.reloadCommands()
+	m.reloadFiles()
 	return m
 }
 
@@ -96,6 +110,15 @@ func (m *model) reloadCommands() {
 	}
 }
 
+func (m *model) reloadFiles() {
+	files, err := os.ReadDir(".")
+	if err != nil {
+		m.footerMsg = "Error reading files: " + err.Error()
+		return
+	}
+	m.files = files
+}
+
 func (m model) Init() tea.Cmd {
 	return nil
 }
@@ -105,11 +128,20 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	switch msg := msg.(type) {
 	case tea.KeyMsg:
+		// Regra global: 'q' ou 'ctrl+c' deve sair, exceto nos formulários de edição/adição
+		// onde 'esc' é usado para cancelar.
+		if msg.String() == "ctrl+c" {
+			return m, tea.Quit
+		}
+		if msg.String() == "q" && m.state != stateAdd && m.state != stateEdit {
+			return m, tea.Quit
+		}
 		switch m.state {
 		case stateNormal:        return m.updateNormal(msg)
 		case stateAdd:           return m.updateAdd(msg)
 		case stateEdit:          return m.updateEdit(msg)
 		case stateConfirmDelete: return m.updateConfirmDelete(msg)
+		case stateConfirmCancel: return m.updateConfirmCancel(msg)
 		case stateHelp:          return m.updateHelp(msg)
 		case stateRunningCmd:    // ignore keys while running
 			return m, nil
@@ -119,36 +151,39 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.height = msg.Height
 	}
 
-	// === CORREÇÃO DOS ERROS DE COMPILAÇÃO ESTÁ AQUI: ATUALIZAR INPUTS ===
+	// Update inputs when in add/edit state
 	if m.state == stateAdd || m.state == stateEdit {
-		// Passa a mensagem para cada input e combina os comandos retornados.
+		var cmds []tea.Cmd
 		var newCmd tea.Cmd
-		
+
 		m.nameInput, newCmd = m.nameInput.Update(msg)
-		cmd = tea.Batch(cmd, newCmd)
+		cmds = append(cmds, newCmd)
 
 		m.cmdInput, newCmd = m.cmdInput.Update(msg)
-		cmd = tea.Batch(cmd, newCmd)
+		cmds = append(cmds, newCmd)
 
 		m.noteInput, newCmd = m.noteInput.Update(msg)
-		cmd = tea.Batch(cmd, newCmd)
+		cmds = append(cmds, newCmd)
+		cmd = tea.Batch(cmds...)
 	}
-
 	return m, cmd
 }
 
 func (m model) updateNormal(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch msg.String() {
-	case "q", "esc", "ctrl+c":
-		return m, tea.Quit
 	case "up", "k":
 		if m.selected > 0 {
 			m.selected--
 		}
 	case "down", "j":
+		// TODO: This will need to be adapted when templates are fully implemented
 		if m.selected < len(m.commands)-1 {
 			m.selected++
 		}
+	case "tab":
+		// Switch between Commands and Templates view
+		m.viewMode = (m.viewMode + 1) % 2 // Toggles between 0 and 1
+		m.selected = 0
 	case "a", "A":
 		m.state = stateAdd
 		m.nameInput.SetValue("")
@@ -262,10 +297,16 @@ func (m model) updateAdd(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.nameInput.Blur()
 	case "tab":
 		m.handleTab()
+	case "q":
+		m.previousState = m.state
+		m.state = stateConfirmCancel
+		m.footerMsg = "Discard changes? (y/n)"
 	case "up", "down":
-		m.handleTab()
+		m.handleVerticalNav(msg.String())
 	}
-	return m, nil
+	var newCmd tea.Cmd
+	m, newCmd = m.updateInputs(msg)
+	return m, newCmd
 }
 
 func (m model) updateEdit(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
@@ -311,10 +352,33 @@ func (m model) updateEdit(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.nameInput.Blur()
 	case "tab":
 		m.handleTab()
+	case "q":
+		m.previousState = m.state
+		m.state = stateConfirmCancel
+		m.footerMsg = "Discard changes? (y/n)"
 	case "up", "down":
-		m.handleTab()
+		m.handleVerticalNav(msg.String())
 	}
-	return m, nil
+	var newCmd tea.Cmd
+	m, newCmd = m.updateInputs(msg)
+	return m, newCmd
+}
+
+// updateInputs propagates the message to the focused text input.
+func (m model) updateInputs(msg tea.Msg) (model, tea.Cmd) {
+	var cmds []tea.Cmd
+	var newCmd tea.Cmd
+
+	m.nameInput, newCmd = m.nameInput.Update(msg)
+	cmds = append(cmds, newCmd)
+
+	m.cmdInput, newCmd = m.cmdInput.Update(msg)
+	cmds = append(cmds, newCmd)
+
+	m.noteInput, newCmd = m.noteInput.Update(msg)
+	cmds = append(cmds, newCmd)
+
+	return m, tea.Batch(cmds...)
 }
 
 func (m model) updateConfirmDelete(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
@@ -332,15 +396,30 @@ func (m model) updateConfirmDelete(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.footerMsg = "No command to delete"
 		}
 		m.state = stateNormal
-	case "n", "N", "esc":
+	case "n", "N", "esc", "q":
 		m.state = stateNormal
 		m.footerMsg = "Delete cancelled"
 	}
 	return m, nil
 }
 
+func (m model) updateConfirmCancel(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch msg.String() {
+	case "y", "Y", "enter":
+		m.state = stateNormal
+		m.footerMsg = "Cancelled"
+		m.nameInput.Blur()
+		m.cmdInput.Blur()
+		m.noteInput.Blur()
+	case "n", "N", "esc", "q":
+		m.state = m.previousState // Volta para stateAdd ou stateEdit
+		m.footerMsg = "Continuing..."
+	}
+	return m, nil
+}
+
 func (m model) updateHelp(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
-	if msg.String() == "esc" || msg.String() == "?" {
+	if msg.String() == "esc" || msg.String() == "?" || msg.String() == "q" {
 		m.state = stateNormal
 		m.footerMsg = ""
 	}
@@ -348,51 +427,65 @@ func (m model) updateHelp(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 }
 
 func (m model) View() string {
-	w := m.width
-	if w <= 0 {
-		w = 100
+	// If screen size is not yet available, don't render
+	if m.width == 0 || m.height == 0 {
+		return "Initializing..."
 	}
-	leftW := int(float32(w) * 0.35)
-	rightW := w - leftW - 4
 
-	var left string
-	left = renderList(m.commands, m.selected, leftW)
-	left = borderStyle.Render(left)
+	// Define panel dimensions
+	// We subtract heights for footer and margins
+	mainPanelHeight := m.height - 4
+	leftPanelWidth := int(float32(m.width) * 0.35)
+	rightPanelWidth := m.width - leftPanelWidth
 
-	var rightTop string
-	var rightBottom string
+	// --- Left Panel (List) ---
+	leftPanel := panelStyle.Copy().
+		Width(leftPanelWidth).
+		Height(mainPanelHeight).
+		Render(renderList(m.commands, m.selected, leftPanelWidth-2)) // -2 for padding
+
+	// --- Right Panels (Details + Note) ---
+	var rightTopContent, rightBottomContent string
 	if len(m.commands) > 0 {
 		c := &m.commands[m.selected]
-		rightTop = borderStyle.Render(renderDetails(c))
-		rightBottom = borderStyle.Render(renderNote(c, rightW))
+		rightTopContent = renderDetails(c)
+		rightBottomContent = renderNote(c, rightPanelWidth-2) // -2 for padding
 	} else {
-		rightTop = borderStyle.Render("No commands")
-		rightBottom = borderStyle.Render("No notes")
+		rightTopContent = "No commands"
+		rightBottomContent = "No notes"
 	}
 
-	// assemble view
-	var b strings.Builder
-	// top line with panels
-	b.WriteString(lipgloss.JoinHorizontal(lipgloss.Top,
-		lipgloss.NewStyle().Width(leftW).Render(left),
-		lipgloss.NewStyle().Width(rightW).Render(rightTop),
-	))
-	b.WriteString("\n")
-	b.WriteString(lipgloss.JoinHorizontal(lipgloss.Top,
-		lipgloss.NewStyle().Width(leftW).Render(""),
-		lipgloss.NewStyle().Width(rightW).Render(rightBottom),
-	))
+	rightTopPanel := panelStyle.Copy().
+		Width(rightPanelWidth).
+		Height(4). // Fixed height for details
+		Render(rightTopContent)
+
+	rightBottomPanel := panelStyle.Copy().
+		Width(rightPanelWidth).
+		Height(mainPanelHeight - 4). // Remaining height
+		Render(rightBottomContent)
+
+	rightPanel := lipgloss.JoinVertical(lipgloss.Left, rightTopPanel, rightBottomPanel)
+
+	// --- Main View ---
+	mainView := lipgloss.JoinHorizontal(lipgloss.Top, leftPanel, rightPanel)
+
 	// footer
 	footer := footerStyle.Render("[A] Add  [E] Edit  [R] Run  [D] Delete  [?] Help  [Q] Quit  " + m.footerMsg)
-	b.WriteString("\n\n")
-	b.WriteString(footer)
+
+	// Overlays (Help, Confirm, Add/Edit)
+	var overlay string
 	// help overlay
 	if m.state == stateHelp {
-		b.WriteString("\n\n" + renderHelpView())
+		overlay = renderHelpView()
 	}
 	// confirm delete overlay
 	if m.state == stateConfirmDelete {
-		b.WriteString("\n\n" + lipgloss.NewStyle().Bold(true).Render("Confirm delete? (y/n)"))
+		overlay = borderStyle.Render(lipgloss.NewStyle().Padding(1).SetString("Confirm delete? (y/n)").String())
+	}
+	// confirm cancel add/edit overlay
+	if m.state == stateConfirmCancel {
+		overlay = borderStyle.Render(lipgloss.NewStyle().Padding(1).SetString("Discard changes? (y/n)").String())
 	}
 	// add/edit overlay
 	if m.state == stateAdd || m.state == stateEdit {
@@ -400,16 +493,31 @@ func (m model) View() string {
 		if m.state == stateEdit {
 			title = "Edit Command"
 		}
-		b.WriteString("\n\n" + lipgloss.NewStyle().Bold(true).Render(title))
-		b.WriteString("\nName: " + m.nameInput.View())
-		b.WriteString("\nCmd:  " + m.cmdInput.View())
-		b.WriteString("\nNote: " + m.noteInput.View())
-		b.WriteString("\n\nPress Enter to save, Esc to cancel")
+		form := lipgloss.JoinVertical(lipgloss.Left,
+			titleStyle.Render(title),
+			"Name: "+m.nameInput.View(),
+			"Cmd:  "+m.cmdInput.View(),
+			"Note: "+m.noteInput.View(),
+			"\nPress Enter to save, Esc to cancel",
+		)
+		overlay = borderStyle.Render(lipgloss.NewStyle().Padding(1).Render(form))
 	}
 	if m.state == stateRunningCmd {
-		b.WriteString("\n\n" + lipgloss.NewStyle().Italic(true).Render("Running command... (TUI is paused until command completes)"))
+		overlay = borderStyle.Render(lipgloss.NewStyle().Padding(1).Italic(true).Render("Running command..."))
 	}
-	return b.String()
+
+	// Final assembly
+	mainContent := lipgloss.JoinVertical(lipgloss.Left, mainView, footer)
+
+	// If there's an overlay, place it on top of the main content.
+	if overlay != "" {
+		// Create a style for the overlay container that will render the main content as its background
+		overlayStyle := lipgloss.NewStyle().Width(m.width).Height(m.height)
+		// Place the overlay content in the center
+		centeredOverlay := lipgloss.Place(m.width, m.height, lipgloss.Center, lipgloss.Center, overlay)
+		return overlayStyle.Render(centeredOverlay)
+	}
+	return mainContent
 }
 
 // helper

@@ -3,19 +3,18 @@ package tui
 import "github.com/charmbracelet/lipgloss"
 
 var (
-	// Colors requested: amber/neon on black
+	// Classic 80s terminal green on black
 	bgColor        = lipgloss.Color("#000000")
-	primaryColor   = lipgloss.Color("#FFBF00") // amber neon
-	secondaryColor = lipgloss.Color("#E5AA00")
+	primaryColor   = lipgloss.Color("#32CD32") // LimeGreen
+	secondaryColor = lipgloss.Color("#28a428")
 
 	borderStyle = lipgloss.NewStyle().
 			Border(lipgloss.NormalBorder()).
 			BorderForeground(primaryColor).
 			Padding(0, 1)
-	panelStyle = lipgloss.NewStyle().
-			Background(bgColor).
-			Foreground(primaryColor).
-			Padding(0, 1)
+	// panelStyle is for the main content panels, with borders
+	panelStyle = borderStyle.Copy()
+
 	footerStyle = lipgloss.NewStyle().
 			Background(bgColor).
 			Foreground(primaryColor).

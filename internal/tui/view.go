@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"os"
 	"fmt"
 	"strings"
 
@@ -50,6 +51,24 @@ func renderNote(c *models.Command, width int) string {
 	}
 	// simple wrap
 	return lipgloss.NewStyle().Width(width).Render(c.Note)
+}
+
+func renderFileBrowser(files []os.DirEntry, width int) string {
+	var b strings.Builder
+	b.WriteString(titleStyle.Render("Arquivos") + "\n\n")
+
+	dirStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("99")) // Blue for dirs
+
+	for _, f := range files {
+		name := f.Name()
+		if f.IsDir() {
+			b.WriteString(dirStyle.Render(name + "/"))
+		} else {
+			b.WriteString(name)
+		}
+		b.WriteString("\n")
+	}
+	return b.String()
 }
 
 type helpBinding struct {
