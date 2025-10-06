@@ -432,43 +432,63 @@ func (m model) View() string {
 		return "Initializing..."
 	}
 
-	// Define panel dimensions
-	// We subtract heights for footer and margins
-	mainPanelHeight := m.height - 4
-	leftPanelWidth := int(float32(m.width) * 0.35)
-	rightPanelWidth := m.width - leftPanelWidth
+	var mainView string
+	const verticalLayoutBreakpoint = 80 // width to switch to vertical layout
 
-	// --- Left Panel (List) ---
-	leftPanel := panelStyle.Copy().
-		Width(leftPanelWidth).
-		Height(mainPanelHeight).
-		Render(renderList(m.commands, m.selected, leftPanelWidth-2)) // -2 for padding
+	if m.width < verticalLayoutBreakpoint {
+		// --- Vertical Layout ---
+		availableHeight := m.height - 4 // for footer
+		listHeight := availableHeight / 2
+		detailsHeight := availableHeight - listHeight
 
-	// --- Right Panels (Details + Note) ---
-	var rightTopContent, rightBottomContent string
-	if len(m.commands) > 0 {
-		c := &m.commands[m.selected]
-		rightTopContent = renderDetails(c)
-		rightBottomContent = renderNote(c, rightPanelWidth-2) // -2 for padding
+		listContent := renderList(m.commands, m.selected, m.width-2)
+		listPanel := panelStyle.Copy().Width(m.width).Height(listHeight).Render(listContent)
+
+		var detailsContent string
+		if len(m.commands) > 0 {
+			detailsContent = renderDetails(&m.commands[m.selected]) + "\n\n" + renderNote(&m.commands[m.selected], m.width-2)
+		} else {
+			detailsContent = "No commands"
+		}
+		detailsPanel := panelStyle.Copy().Width(m.width).Height(detailsHeight).Render(detailsContent)
+
+		mainView = lipgloss.JoinVertical(lipgloss.Left, listPanel, detailsPanel)
 	} else {
-		rightTopContent = "No commands"
-		rightBottomContent = "No notes"
+		// --- Horizontal Layout ---
+		mainPanelHeight := m.height - 4
+		leftPanelWidth := int(float32(m.width) * 0.35)
+		rightPanelWidth := m.width - leftPanelWidth
+
+		// Left Panel (List)
+		leftPanel := panelStyle.Copy().
+			Width(leftPanelWidth).
+			Height(mainPanelHeight).
+			Render(renderList(m.commands, m.selected, leftPanelWidth-2))
+
+		// Right Panels (Details + Note)
+		var rightTopContent, rightBottomContent string
+		if len(m.commands) > 0 {
+			c := &m.commands[m.selected]
+			rightTopContent = renderDetails(c)
+			rightBottomContent = renderNote(c, rightPanelWidth-2)
+		} else {
+			rightTopContent = "No commands"
+			rightBottomContent = "No notes"
+		}
+
+		rightTopPanel := panelStyle.Copy().
+			Width(rightPanelWidth).
+			Height(4). // Fixed height for details
+			Render(rightTopContent)
+
+		rightBottomPanel := panelStyle.Copy().
+			Width(rightPanelWidth).
+			Height(mainPanelHeight - 4). // Remaining height
+			Render(rightBottomContent)
+
+		rightPanel := lipgloss.JoinVertical(lipgloss.Left, rightTopPanel, rightBottomPanel)
+		mainView = lipgloss.JoinHorizontal(lipgloss.Top, leftPanel, rightPanel)
 	}
-
-	rightTopPanel := panelStyle.Copy().
-		Width(rightPanelWidth).
-		Height(4). // Fixed height for details
-		Render(rightTopContent)
-
-	rightBottomPanel := panelStyle.Copy().
-		Width(rightPanelWidth).
-		Height(mainPanelHeight - 4). // Remaining height
-		Render(rightBottomContent)
-
-	rightPanel := lipgloss.JoinVertical(lipgloss.Left, rightTopPanel, rightBottomPanel)
-
-	// --- Main View ---
-	mainView := lipgloss.JoinHorizontal(lipgloss.Top, leftPanel, rightPanel)
 
 	// footer
 	footer := footerStyle.Render("[A] Add  [E] Edit  [R] Run  [D] Delete  [?] Help  [Q] Quit  " + m.footerMsg)
