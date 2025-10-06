@@ -1,4 +1,4 @@
-module github.com/you/cmd-vault
+module github.com/kanekitakitos/cmd-vault
 
 go 1.24.0
 

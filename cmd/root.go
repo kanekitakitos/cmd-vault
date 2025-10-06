@@ -5,8 +5,8 @@ import (
 	"os"
 
 	"github.com/spf13/cobra"
-	"github.com/you/cmd-vault/internal/db"
-	"github.com/you/cmd-vault/internal/tui"
+	"github.com/kanekitakitos/cmd-vault/internal/db"
+	"github.com/kanekitakitos/cmd-vault/internal/tui"
 )
 
 var rootCmd = &cobra.Command{

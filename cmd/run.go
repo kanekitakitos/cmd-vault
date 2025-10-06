@@ -6,7 +6,7 @@ import (
 	"os/exec"
 
 	"github.com/spf13/cobra"
-	"github.com/you/cmd-vault/internal/db"
+	"github.com/kanekitakitos/cmd-vault/internal/db"
 )
 
 var dbPath string

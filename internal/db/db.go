@@ -6,7 +6,7 @@ import (
 	"time"
 
 	_ "github.com/mattn/go-sqlite3"
-	"github.com/you/cmd-vault/internal/models"
+	"github.com/kanekitakitos/cmd-vault/internal/models"
 )
 
 const schema = `
@@ -67,16 +67,10 @@ func (s *Store) GetAllCommands() ([]models.Command, error) {
 	defer rows.Close()
 	var out []models.Command
 	for rows.Next() {
-		var c models.Command
-		var createdAt string
-		if err := rows.Scan(&c.ID, &c.Name, &c.CommandStr, &c.Note, &c.UsageCount, &createdAt); err != nil {
+		c, err := scanCommand(rows)
+		if err != nil {
 			return nil, err
 		}
-		parsedTime, err := time.Parse(time.RFC3339, createdAt)
-		if err != nil {
-			return nil, err // Retorna o erro de parsing
-		}
-		c.CreatedAt = parsedTime
 		out = append(out, c)
 	}
 	return out, nil
@@ -84,20 +78,29 @@ func (s *Store) GetAllCommands() ([]models.Command, error) {
 
 func (s *Store) GetByName(name string) (*models.Command, error) {
 	row := s.conn.QueryRow(`SELECT id, name, command_str, note, usage_count, created_at FROM commands WHERE name = ?`, name)
-	var c models.Command
-	var createdAt string
-	if err := row.Scan(&c.ID, &c.Name, &c.CommandStr, &c.Note, &c.UsageCount, &createdAt); err != nil {
+	c, err := scanCommand(row)
+	if err != nil {
 		if err == sql.ErrNoRows {
 			return nil, nil
 		}
 		return nil, err
 	}
+	return &c, nil
+}
+
+// scanCommand is a helper to scan a command from a sql.Row or sql.Rows.
+func scanCommand(s interface{ Scan(...interface{}) error }) (models.Command, error) {
+	var c models.Command
+	var createdAt string
+	if err := s.Scan(&c.ID, &c.Name, &c.CommandStr, &c.Note, &c.UsageCount, &createdAt); err != nil {
+		return models.Command{}, err
+	}
 	parsedTime, err := time.Parse(time.RFC3339, createdAt)
 	if err != nil {
-		return nil, err // Retorna o erro de parsing
+		return models.Command{}, err
 	}
 	c.CreatedAt = parsedTime
-	return &c, nil
+	return c, nil
 }
 
 func (s *Store) UpdateCommand(c *models.Command) error {

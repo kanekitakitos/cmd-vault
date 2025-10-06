@@ -9,8 +9,8 @@ import (
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
-	"github.com/you/cmd-vault/internal/db"
-	"github.com/you/cmd-vault/internal/models"
+	"github.com/kanekitakitos/cmd-vault/internal/db"
+	"github.com/kanekitakitos/cmd-vault/internal/models"
 )
 
 type viewMode int

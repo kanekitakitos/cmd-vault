@@ -6,7 +6,7 @@ import (
 	"strings"
 
 	"github.com/charmbracelet/lipgloss"
-	"github.com/you/cmd-vault/internal/models"
+	"github.com/kanekitakitos/cmd-vault/internal/models"
 )
 
 func renderList(commands []models.Command, selected int, width int) string {

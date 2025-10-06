@@ -1,6 +1,6 @@
 package main
 
-import "github.com/you/cmd-vault/cmd"
+import "github.com/kanekitakitos/cmd-vault/cmd"
 
 func main() {
 	cmd.Execute()
