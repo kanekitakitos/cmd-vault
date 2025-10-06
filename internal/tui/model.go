@@ -3,6 +3,7 @@ package tui
 import (
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -28,8 +29,10 @@ const (
 	stateEdit
 	stateConfirmDelete
 	stateHelp
+	stateFileBrowser
 	stateConfirmCancel
 	stateRunningCmd
+	stateActionsPanel
 )
 
 type model struct {
@@ -43,7 +46,13 @@ type model struct {
 	previousState state
 
 	// file browser
-	files []os.DirEntry
+	files        []os.DirEntry
+	selectedFile int
+	currentPath  string
+
+	// actions panel
+	actions        []string
+	selectedAction int
 
 	// inputs for add/edit
 	nameInput textinput.Model
@@ -84,14 +93,23 @@ func initialModel(store *db.Store) model {
 	note.CharLimit = 512
 	note.Width = 60
 
-	m := model{
-		store:     store,
-		selected:  0,
-		state:     stateNormal,
-		nameInput: name,
-		cmdInput:  cmdi,
-		noteInput: note,
+	wd, err := os.Getwd()
+	if err != nil {
+		wd = "." // Fallback to relative path on error
 	}
+
+	m := model{
+		store:          store,
+		selected:       0,
+		state:          stateNormal,
+		nameInput:      name,
+		cmdInput:       cmdi,
+		noteInput:      note,
+		currentPath:    wd,
+		actions:        []string{"Adicionar Comando", "Editar Comando", "Executar Comando", "Deletar Comando"},
+		selectedAction: 0,
+	}
+
 	m.reloadCommands()
 	m.reloadFiles()
 	return m
@@ -111,7 +129,7 @@ func (m *model) reloadCommands() {
 }
 
 func (m *model) reloadFiles() {
-	files, err := os.ReadDir(".")
+	files, err := os.ReadDir(m.currentPath)
 	if err != nil {
 		m.footerMsg = "Error reading files: " + err.Error()
 		return
@@ -142,7 +160,9 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case stateEdit:          return m.updateEdit(msg)
 		case stateConfirmDelete: return m.updateConfirmDelete(msg)
 		case stateConfirmCancel: return m.updateConfirmCancel(msg)
+		case stateFileBrowser:   return m.updateFileBrowser(msg)
 		case stateHelp:          return m.updateHelp(msg)
+		case stateActionsPanel:  return m.updateActionsPanel(msg)
 		case stateRunningCmd:    // ignore keys while running
 			return m, nil
 		}
@@ -218,9 +238,89 @@ func (m model) updateNormal(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 		m.state = stateRunningCmd
 		go m.runSelectedCommand()
-		m.footerMsg = "Running command..."
+	case "s", "S":
+		m.state = stateFileBrowser
+		m.selectedFile = 0
+		m.reloadFiles()
+		m.footerMsg = "Navegador de Arquivos - [Setas] para navegar, [s] para sair, [r] para executar"
 	case "?":
 		m.state = stateHelp
+	case "x", "X":
+		m.state = stateActionsPanel
+		m.selectedAction = 0
+		m.footerMsg = "Selecione uma ação"
+	}
+	return m, nil
+}
+
+func (m model) updateFileBrowser(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch msg.String() {
+	case "up", "k":
+		if m.selectedFile > 0 {
+			m.selectedFile--
+		}
+	case "down", "j":
+		if m.selectedFile < len(m.files)-1 {
+			m.selectedFile++
+		}
+	case "right", "enter":
+		if len(m.files) > 0 {
+			selectedEntry := m.files[m.selectedFile]
+			if selectedEntry.IsDir() {
+				m.currentPath = filepath.Join(m.currentPath, selectedEntry.Name())
+				m.selectedFile = 0
+				m.reloadFiles()
+			}
+		}
+	case "left", "backspace":
+		// Go up one directory, but not from root
+		parentDir := filepath.Dir(m.currentPath)
+		if parentDir != m.currentPath { // Stop at root (e.g., "C:\" or "/")
+			m.currentPath = parentDir
+			m.selectedFile = 0
+			m.reloadFiles()
+		}
+	case "s", "S", "esc":
+		m.state = stateNormal
+		m.footerMsg = ""
+	case "r", "R":
+		m.state = stateRunningCmd
+		go m.runSelectedCommand()
+	}
+	return m, nil
+}
+
+func (m model) updateActionsPanel(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch msg.String() {
+	case "up", "k":
+		if m.selectedAction > 0 {
+			m.selectedAction--
+		}
+	case "down", "j":
+		if m.selectedAction < len(m.actions)-1 {
+			m.selectedAction++
+		}
+	case "enter":
+		selectedAction := m.actions[m.selectedAction]
+		m.state = stateNormal // Return to normal state after selection
+		m.footerMsg = ""
+		switch selectedAction {
+		case "Adicionar Comando":
+			// Simulate pressing 'a'
+			return m.updateNormal(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'a'}})
+		case "Editar Comando":
+			// Simulate pressing 'e'
+			return m.updateNormal(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'e'}})
+		case "Executar Comando":
+			// Simulate pressing 'r'
+			return m.updateNormal(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'r'}})
+		case "Deletar Comando":
+			// Simulate pressing 'd'
+			return m.updateNormal(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'d'}})
+		}
+	case "esc", "x", "q":
+		m.state = stateNormal
+		m.footerMsg = ""
 	}
 	return m, nil
 }
@@ -436,21 +536,23 @@ func (m model) View() string {
 	const verticalLayoutBreakpoint = 80 // width to switch to vertical layout
 
 	if m.width < verticalLayoutBreakpoint {
-		// --- Vertical Layout ---
+		// --- Vertical Layout (narrow screen) ---
 		availableHeight := m.height - 4 // for footer
+		// The panel's border takes up 2 characters of width (left and right)
+		panelWidth := m.width - 2
 		listHeight := availableHeight / 2
 		detailsHeight := availableHeight - listHeight
 
-		listContent := renderList(m.commands, m.selected, m.width-2)
-		listPanel := panelStyle.Copy().Width(m.width).Height(listHeight).Render(listContent)
+		listContent := renderList(m.commands, m.selected, panelWidth-2) // -2 for panel padding
+		listPanel := panelStyle.Copy().Width(panelWidth).Height(listHeight).Render(listContent)
 
 		var detailsContent string
 		if len(m.commands) > 0 {
-			detailsContent = renderDetails(&m.commands[m.selected]) + "\n\n" + renderNote(&m.commands[m.selected], m.width-2)
+			detailsContent = renderDetails(&m.commands[m.selected]) + "\n\n" + renderNote(&m.commands[m.selected], panelWidth-2) // -2 for panel padding
 		} else {
 			detailsContent = "No commands"
 		}
-		detailsPanel := panelStyle.Copy().Width(m.width).Height(detailsHeight).Render(detailsContent)
+		detailsPanel := panelStyle.Copy().Width(panelWidth).Height(detailsHeight).Render(detailsContent)
 
 		mainView = lipgloss.JoinVertical(lipgloss.Left, listPanel, detailsPanel)
 	} else {
@@ -459,11 +561,18 @@ func (m model) View() string {
 		leftPanelWidth := int(float32(m.width) * 0.35)
 		rightPanelWidth := m.width - leftPanelWidth
 
-		// Left Panel (List)
+		// Left Panel (Commands List or File Browser)
+		var leftContent string
+		if m.state == stateFileBrowser {
+			leftContent = renderFileBrowser(m.files, m.selectedFile, m.currentPath, leftPanelWidth-2)
+		} else {
+			leftContent = renderList(m.commands, m.selected, leftPanelWidth-2)
+		}
+
 		leftPanel := panelStyle.Copy().
 			Width(leftPanelWidth).
 			Height(mainPanelHeight).
-			Render(renderList(m.commands, m.selected, leftPanelWidth-2))
+			Render(leftContent)
 
 		// Right Panels (Details + Note)
 		var rightTopContent, rightBottomContent string
@@ -491,7 +600,7 @@ func (m model) View() string {
 	}
 
 	// footer
-	footer := footerStyle.Render("[A] Add  [E] Edit  [R] Run  [D] Delete  [?] Help  [Q] Quit  " + m.footerMsg)
+	footer := footerStyle.Render("[S] Arquivos  [X] Ações  [?] Ajuda  [Q] Sair  " + m.footerMsg)
 
 	// Overlays (Help, Confirm, Add/Edit)
 	var overlay string
@@ -506,6 +615,10 @@ func (m model) View() string {
 	// confirm cancel add/edit overlay
 	if m.state == stateConfirmCancel {
 		overlay = borderStyle.Render(lipgloss.NewStyle().Padding(1).SetString("Discard changes? (y/n)").String())
+	}
+	// actions panel overlay
+	if m.state == stateActionsPanel {
+		overlay = renderActionsPanel(m.actions, m.selectedAction)
 	}
 	// add/edit overlay
 	if m.state == stateAdd || m.state == stateEdit {
@@ -560,7 +673,8 @@ func (m *model) runSelectedCommand() {
 	_ = m.store.IncrementUsage(c.ID)
 
 	// Use cmd /C as required
-	cmd := exec.Command("cmd", "/C", c.CommandStr)
+	cmd := exec.Command("cmd", "/C", c.CommandStr) // #nosec G204
+	cmd.Dir = m.currentPath
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 	cmd.Stdin = os.Stdin

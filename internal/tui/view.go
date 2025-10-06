@@ -53,20 +53,28 @@ func renderNote(c *models.Command, width int) string {
 	return lipgloss.NewStyle().Width(width).Render(c.Note)
 }
 
-func renderFileBrowser(files []os.DirEntry, width int) string {
+func renderFileBrowser(files []os.DirEntry, selected int, path string, width int) string {
 	var b strings.Builder
-	b.WriteString(titleStyle.Render("Arquivos") + "\n\n")
+	b.WriteString(titleStyle.Render("Explorador: "+path) + "\n\n")
 
 	dirStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("99")) // Blue for dirs
 
-	for _, f := range files {
+	for i, f := range files {
+		style := lipgloss.NewStyle()
+		prefix := "  "
+		if i == selected {
+			style = style.Foreground(primaryColor).Bold(true)
+			prefix = "→ "
+		}
+
 		name := f.Name()
 		if f.IsDir() {
-			b.WriteString(dirStyle.Render(name + "/"))
+			name = dirStyle.Render(name + "/")
 		} else {
-			b.WriteString(name)
+			name = style.Render(name)
 		}
-		b.WriteString("\n")
+
+		b.WriteString(fmt.Sprintf("%s%s\n", prefix, name))
 	}
 	return b.String()
 }
@@ -78,10 +86,13 @@ type helpBinding struct {
 
 var helpBindings = []helpBinding{
 	{Key: "↑/k, ↓/j", Description: "Navegar na lista"},
+	{Key: "x", Description: "Abrir painel de ações"},
 	{Key: "a", Description: "Adicionar novo comando"},
 	{Key: "e", Description: "Editar comando selecionado"},
 	{Key: "d", Description: "Deletar comando selecionado"},
+	{Key: "s", Description: "Abrir navegador de arquivos"},
 	{Key: "r", Description: "Executar comando selecionado"},
+	{Key: "←/→", Description: "Navegar nos diretórios (no explorador)"},
 	{Key: "q, esc", Description: "Sair do programa"},
 	{Key: "?", Description: "Mostrar/ocultar esta ajuda"},
 }
@@ -96,4 +107,25 @@ func renderHelpView() string {
 
 	b.WriteString("\nPressione '?' ou 'Esc' para fechar.")
 	return borderStyle.Render(b.String())
+}
+
+func renderActionsPanel(actions []string, selected int) string {
+	var b strings.Builder
+	b.WriteString(titleStyle.Render("Painel de Ações") + "\n\n")
+
+	for i, action := range actions {
+		style := lipgloss.NewStyle()
+		prefix := "  "
+		if i == selected {
+			style = style.Foreground(primaryColor).Bold(true)
+			prefix = "→ "
+		}
+		line := fmt.Sprintf("%s%s", prefix, action)
+		b.WriteString(style.Render(line))
+		b.WriteString("\n")
+	}
+
+	b.WriteString("\nUse ↑/↓ para navegar, Enter para selecionar.")
+
+	return borderStyle.Render(lipgloss.NewStyle().Padding(1).Render(b.String()))
 }
