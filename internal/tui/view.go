@@ -79,6 +79,33 @@ func renderFileBrowser(files []os.DirEntry, selected int, path string, width int
 	return b.String()
 }
 
+func renderFileBrowserDetails(entry os.DirEntry, width int) string {
+	if entry == nil {
+		return "Nenhum arquivo selecionado."
+	}
+
+	info, err := entry.Info()
+	if err != nil {
+		return fmt.Sprintf("Erro ao ler informações: %v", err)
+	}
+
+	var b strings.Builder
+	b.WriteString(titleStyle.Render("Detalhes") + "\n\n")
+
+	details := []string{
+		fmt.Sprintf("Nome:  %s", info.Name()),
+		fmt.Sprintf("Tamanho: %d bytes", info.Size()),
+		fmt.Sprintf("Modo:    %s", info.Mode().String()),
+		fmt.Sprintf("Modificado: %s", info.ModTime().Format("2006-01-02 15:04:05")),
+	}
+
+	for _, d := range details {
+		b.WriteString(d + "\n")
+	}
+
+	return b.String()
+}
+
 type helpBinding struct {
 	Key         string
 	Description string
@@ -87,12 +114,9 @@ type helpBinding struct {
 var helpBindings = []helpBinding{
 	{Key: "↑/k, ↓/j", Description: "Navegar na lista"},
 	{Key: "x", Description: "Abrir painel de ações"},
-	{Key: "a", Description: "Adicionar novo comando"},
-	{Key: "e", Description: "Editar comando selecionado"},
-	{Key: "d", Description: "Deletar comando selecionado"},
 	{Key: "s", Description: "Abrir navegador de arquivos"},
-	{Key: "r", Description: "Executar comando selecionado"},
 	{Key: "←/→", Description: "Navegar nos diretórios (no explorador)"},
+	{Key: "r", Description: "Executar comando (no dir. do explorador)"},
 	{Key: "q, esc", Description: "Sair do programa"},
 	{Key: "?", Description: "Mostrar/ocultar esta ajuda"},
 }

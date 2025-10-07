@@ -574,33 +574,45 @@ func (m model) View() string {
 			Height(mainPanelHeight).
 			Render(leftContent)
 
-		// Right Panels (Details + Note)
-		var rightTopContent, rightBottomContent string
-		if len(m.commands) > 0 {
-			c := &m.commands[m.selected]
-			rightTopContent = renderDetails(c)
-			rightBottomContent = renderNote(c, rightPanelWidth-2)
+		var rightPanel string
+		if m.state == stateFileBrowser {
+			var selectedEntry os.DirEntry
+			if len(m.files) > 0 && m.selectedFile < len(m.files) {
+				selectedEntry = m.files[m.selectedFile]
+			}
+			fileDetailsContent := renderFileBrowserDetails(selectedEntry, rightPanelWidth-2)
+			fileActionsContent := "  [Setas] Navegar   [s] Sair   [r] Executar aqui"
+
+			detailsPanel := panelStyle.Copy().
+				Width(rightPanelWidth).
+				Height(mainPanelHeight - 4).
+				Render(fileDetailsContent)
+
+			actionsPanel := panelStyle.Copy().
+				Width(rightPanelWidth).
+				Height(4).
+				Render(fileActionsContent)
+
+			rightPanel = lipgloss.JoinVertical(lipgloss.Left, detailsPanel, actionsPanel)
 		} else {
-			rightTopContent = "No commands"
-			rightBottomContent = "No notes"
+			var rightTopContent, rightBottomContent string
+			if len(m.commands) > 0 {
+				c := &m.commands[m.selected]
+				rightTopContent = renderDetails(c)
+				rightBottomContent = renderNote(c, rightPanelWidth-2)
+			} else {
+				rightTopContent = "No commands"
+				rightBottomContent = "No notes"
+			}
+			rightTopPanel := panelStyle.Copy().Width(rightPanelWidth).Height(4).Render(rightTopContent)
+			rightBottomPanel := panelStyle.Copy().Width(rightPanelWidth).Height(mainPanelHeight - 4).Render(rightBottomContent)
+			rightPanel = lipgloss.JoinVertical(lipgloss.Left, rightTopPanel, rightBottomPanel)
 		}
-
-		rightTopPanel := panelStyle.Copy().
-			Width(rightPanelWidth).
-			Height(4). // Fixed height for details
-			Render(rightTopContent)
-
-		rightBottomPanel := panelStyle.Copy().
-			Width(rightPanelWidth).
-			Height(mainPanelHeight - 4). // Remaining height
-			Render(rightBottomContent)
-
-		rightPanel := lipgloss.JoinVertical(lipgloss.Left, rightTopPanel, rightBottomPanel)
 		mainView = lipgloss.JoinHorizontal(lipgloss.Top, leftPanel, rightPanel)
 	}
 
 	// footer
-	footer := footerStyle.Render("[S] Arquivos  [X] Ações  [?] Ajuda  [Q] Sair  " + m.footerMsg)
+	footer := footerStyle.Render(m.getFooterContent())
 
 	// Overlays (Help, Confirm, Add/Edit)
 	var overlay string
@@ -651,6 +663,13 @@ func (m model) View() string {
 		return overlayStyle.Render(centeredOverlay)
 	}
 	return mainContent
+}
+
+func (m *model) getFooterContent() string {
+	if m.state == stateFileBrowser {
+		return "[S] Sair dos Arquivos  [?] Ajuda  [Q] Sair  " + m.footerMsg
+	}
+	return "[S] Arquivos  [X] Ações  [?] Ajuda  [Q] Sair  " + m.footerMsg
 }
 
 // helper
