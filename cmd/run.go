@@ -5,15 +5,15 @@ import (
 	"os"
 	"os/exec"
 
-	"github.com/spf13/cobra"
 	"github.com/kanekitakitos/cmd-vault/internal/db"
+	"github.com/spf13/cobra"
 )
 
 var dbPath string
 
 func init() {
 	rootCmd.AddCommand(runCmd)
-	runCmd.Flags().StringVar(&dbPath, "db", "vault.db", "path to sqlite database file")
+	runCmd.Flags().StringVar(&dbPath, "db", "lazycmd.db", "path to sqlite database file")
 }
 
 var runCmd = &cobra.Command{
