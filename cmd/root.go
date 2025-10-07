@@ -4,14 +4,20 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/spf13/cobra"
 	"github.com/kanekitakitos/cmd-vault/internal/db"
 	"github.com/kanekitakitos/cmd-vault/internal/tui"
+	"github.com/spf13/cobra"
+)
+
+var (
+	version   = "dev"
+	gitCommit = "none"
 )
 
 var rootCmd = &cobra.Command{
-	Use:   "cmd-vault",
-	Short: "Cmd-Vault - retro TUI for saved shell commands",
+	Use:     "cmd-vault",
+	Short:   "Cmd-Vault - retro TUI for saved shell commands",
+	Version: fmt.Sprintf("%s (commit: %s)", version, gitCommit),
 	Run: func(cmd *cobra.Command, args []string) {
 		// When no args, start interactive TUI
 		// Open DB
