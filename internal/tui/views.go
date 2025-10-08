@@ -13,7 +13,7 @@ func (m model) renderView() string {
 	var mainView string
 	const verticalLayoutBreakpoint = 80
 
-	if m.state == stateFileBrowser {
+	if m.state == stateFileBrowser || m.state == stateRunInPath {
 		mainView = m.viewFileBrowser()
 	} else if m.width < verticalLayoutBreakpoint {
 		mainView = m.viewVertical()
@@ -35,23 +35,23 @@ func (m model) renderView() string {
 func (m model) viewVertical() string {
 	availableHeight := m.height - 4
 	// Subtract a margin to prevent panels from touching the window edges
-	panelWidth := m.width - 4
-	listHeight := availableHeight / 2
-	detailsHeight := availableHeight - listHeight
+	panelWidth := m.width - 2
+	listHeight := availableHeight / 4
+	detailsHeight := availableHeight / 4
+	outputHeight := availableHeight - listHeight - detailsHeight
 
 	listContent := renderList(m.commands, m.selected, panelWidth-4)
 	listPanel := panelStyle.Copy().Width(panelWidth).Height(listHeight).Render(listContent)
 
-	var detailsContent string
+	detailsContent := "No commands"
 	if len(m.commands) > 0 {
 		detailsContent = renderDetails(&m.commands[m.selected]) + "\n" + renderNote(&m.commands[m.selected], panelWidth-2)
-	} else {
-		detailsContent = "No commands"
 	}
 	detailsPanel := panelStyle.Copy().Width(panelWidth).Height(detailsHeight).Render(detailsContent)
+	outputPanel := panelStyle.Copy().Width(panelWidth).Height(outputHeight).Render(m.commandOutput)
 
 	// Center the vertical layout
-	return lipgloss.PlaceHorizontal(m.width, lipgloss.Center, lipgloss.JoinVertical(lipgloss.Left, listPanel, detailsPanel))
+	return lipgloss.PlaceHorizontal(m.width, lipgloss.Center, lipgloss.JoinVertical(lipgloss.Left, listPanel, detailsPanel, outputPanel))
 }
 
 func (m model) viewNormalHorizontal() string {
@@ -66,18 +66,17 @@ func (m model) viewNormalHorizontal() string {
 		Height(mainPanelHeight).
 		Render(leftContent)
 
-	var rightTopContent, rightBottomContent string
+	detailsContent := "No commands available."
 	if len(m.commands) > 0 {
 		c := &m.commands[m.selected]
-		rightTopContent = renderDetails(c)
-		rightBottomContent = renderNote(c, rightPanelWidth-2)
-	} else {
-		rightTopContent = "No commands"
-		rightBottomContent = "No notes"
+		detailsContent = lipgloss.JoinVertical(lipgloss.Left, renderDetails(c), renderNote(c, rightPanelWidth-2))
 	}
-	rightTopPanel := panelStyle.Copy().Width(rightPanelWidth).Height(4).Render(rightTopContent)
-	rightBottomPanel := panelStyle.Copy().Width(rightPanelWidth).Height(mainPanelHeight - 4).Render(rightBottomContent)
-	rightPanel := lipgloss.JoinVertical(lipgloss.Left, rightTopPanel, rightBottomPanel)
+
+	detailsHeight := mainPanelHeight / 3
+	outputHeight := mainPanelHeight - detailsHeight
+	detailsPanel := panelStyle.Copy().Width(rightPanelWidth).Height(detailsHeight).Render(detailsContent)
+	outputPanel := panelStyle.Copy().Width(rightPanelWidth).Height(outputHeight).Render(m.commandOutput)
+	rightPanel := lipgloss.JoinVertical(lipgloss.Left, detailsPanel, outputPanel)
 
 	// Center the horizontal layout
 	return lipgloss.PlaceHorizontal(m.width, lipgloss.Center, lipgloss.JoinHorizontal(lipgloss.Top, leftPanel, rightPanel))
@@ -86,7 +85,7 @@ func (m model) viewNormalHorizontal() string {
 func (m model) viewFileBrowser() string {
 	mainPanelHeight := m.height - 4
 	leftPanelWidth := int(float32(m.width) * 0.35)
-	rightPanelWidth := m.width - leftPanelWidth
+	rightPanelWidth := m.width - 4 - leftPanelWidth
 
 	leftContent := renderFileBrowser(m.files, m.selectedFile, m.currentPath, leftPanelWidth-2)
 	leftPanel := panelStyle.Copy().
@@ -99,21 +98,29 @@ func (m model) viewFileBrowser() string {
 		selectedEntry = m.files[m.selectedFile]
 	}
 	fileDetailsContent := renderFileBrowserDetails(selectedEntry, rightPanelWidth-2)
-	fileActionsContent := "  [Setas] Navegar   [s] Sair   [r] Executar aqui"
+
+	var fileActionsContent string
+	if m.state == stateRunInPath {
+		fileActionsContent = "> " + m.runInput.View()
+	} else {
+		fileActionsContent = "  [Arrows] Navigate   [s] Exit   [r] Run here"
+	}
+
+	detailsHeight := (mainPanelHeight / 2) - 2
+	outputHeight := mainPanelHeight - detailsHeight - 2
 
 	detailsPanel := panelStyle.Copy().
 		Width(rightPanelWidth).
-		Height(mainPanelHeight - 4).
+		Height(detailsHeight).
 		Render(fileDetailsContent)
 
-	actionsPanel := panelStyle.Copy().
+	outputPanel := panelStyle.Copy().
 		Width(rightPanelWidth).
-		Height(4).
-		Render(fileActionsContent)
+		Height(outputHeight).
+		Render(m.commandOutput + "\n" + fileActionsContent + "\n\n[Esc] to exit terminal mode")
 
-	rightPanel := lipgloss.JoinVertical(lipgloss.Left, detailsPanel, actionsPanel)
-
-	return lipgloss.JoinHorizontal(lipgloss.Top, leftPanel, rightPanel)
+	rightPanel := lipgloss.JoinVertical(lipgloss.Left, detailsPanel, outputPanel)
+	return lipgloss.PlaceHorizontal(m.width, lipgloss.Center, lipgloss.JoinHorizontal(lipgloss.Top, leftPanel, rightPanel))
 }
 
 func (m model) viewOverlay() string {
@@ -147,14 +154,14 @@ func (m model) viewOverlay() string {
 
 func (m *model) getFooterContent() string {
 	if m.state == stateFileBrowser {
-		return "[S] Sair dos Arquivos  [?] Ajuda  [Q] Sair  " + m.footerMsg
+		return "[S] Exit Files  [?] Help  [Q] Quit  " + m.footerMsg
 	}
-	return "[S] Arquivos  [X] Ações  [?] Ajuda  [Q] Sair  " + m.footerMsg
+	return "[R] Run  [S] Files  [X] Actions  [?] Help  [Q] Quit  " + m.footerMsg
 }
 
 func renderList(commands []models.Command, selected int, width int) string {
 	var b strings.Builder
-	title := titleStyle.Render("Comandos")
+	title := titleStyle.Render("Commands")
 	b.WriteString(title)
 	b.WriteString("\n")
 	for i, c := range commands {
@@ -193,7 +200,7 @@ func renderNote(c *models.Command, width int) string {
 
 func renderFileBrowser(files []os.DirEntry, selected int, path string, width int) string {
 	var b strings.Builder
-	b.WriteString(titleStyle.Render("Explorador: "+path) + "\n")
+	b.WriteString(titleStyle.Render("Explorer: "+path) + "\n")
 	dirStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("99"))
 	for i, f := range files {
 		style := lipgloss.NewStyle()
@@ -215,19 +222,19 @@ func renderFileBrowser(files []os.DirEntry, selected int, path string, width int
 
 func renderFileBrowserDetails(entry os.DirEntry, width int) string {
 	if entry == nil {
-		return "Nenhum arquivo selecionado."
+		return "No file selected."
 	}
 	info, err := entry.Info()
 	if err != nil {
-		return fmt.Sprintf("Erro ao ler informações: %v", err)
+		return fmt.Sprintf("Error reading info: %v", err)
 	}
 	var b strings.Builder
-	b.WriteString(titleStyle.Render("Detalhes") + "\n")
+	b.WriteString(titleStyle.Render("Details") + "\n")
 	details := []string{
-		fmt.Sprintf("Nome:  %s", info.Name()),
-		fmt.Sprintf("Tamanho: %d bytes", info.Size()),
-		fmt.Sprintf("Modo:    %s", info.Mode().String()),
-		fmt.Sprintf("Modificado: %s", info.ModTime().Format("2006-01-02 15:04:05")),
+		fmt.Sprintf("Name:      %s", info.Name()),
+		fmt.Sprintf("Size:      %d bytes", info.Size()),
+		fmt.Sprintf("Mode:      %s", info.Mode().String()),
+		fmt.Sprintf("Modified:  %s", info.ModTime().Format("2006-01-02 15:04:05")),
 	}
 	for _, d := range details {
 		b.WriteString(d + "\n")
@@ -241,28 +248,28 @@ type helpBinding struct {
 }
 
 var helpBindings = []helpBinding{
-	{Key: "↑/k, ↓/j", Description: "Navegar na lista"},
-	{Key: "x", Description: "Abrir painel de ações"},
-	{Key: "s", Description: "Abrir navegador de arquivos"},
-	{Key: "←/→", Description: "Navegar nos diretórios (no explorador)"},
-	{Key: "r", Description: "Executar comando (no dir. do explorador)"},
-	{Key: "q, esc", Description: "Sair do programa"},
-	{Key: "?", Description: "Mostrar/ocultar esta ajuda"},
+	{Key: "↑/k, ↓/j", Description: "Navigate list"},
+	{Key: "x", Description: "Open actions panel"},
+	{Key: "s", Description: "Open file browser"},
+	{Key: "r", Description: "Run selected command"},
+	{Key: "←/→", Description: "Navigate directories (in explorer)"},
+	{Key: "q, esc", Description: "Quit program"},
+	{Key: "?", Description: "Show/hide this help"},
 }
 
 func renderHelpView() string {
 	var b strings.Builder
-	b.WriteString(titleStyle.Render("Ajuda") + "\n")
+	b.WriteString(titleStyle.Render("Help") + "\n")
 	for _, h := range helpBindings {
 		b.WriteString(fmt.Sprintf("  %-20s %s\n", h.Key, h.Description))
 	}
-	b.WriteString("\nPressione '?' ou 'Esc' para fechar.")
+	b.WriteString("\nPress '?' or 'Esc' to close.")
 	return borderStyle.Render(b.String())
 }
 
 func renderActionsPanel(actions []string, selected int) string {
 	var b strings.Builder
-	b.WriteString(titleStyle.Render("Painel de Ações") + "\n")
+	b.WriteString(titleStyle.Render("Actions Panel") + "\n")
 	for i, action := range actions {
 		style := lipgloss.NewStyle()
 		prefix := "  "
@@ -274,6 +281,6 @@ func renderActionsPanel(actions []string, selected int) string {
 		b.WriteString(style.Render(line))
 		b.WriteString("\n")
 	}
-	b.WriteString("\nUse ↑/↓ para navegar, Enter para selecionar.")
+	b.WriteString("\nUse ↑/↓ to navigate, Enter to select.")
 	return borderStyle.Render(lipgloss.NewStyle().Padding(1).Render(b.String()))
 }

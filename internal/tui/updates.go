@@ -54,19 +54,20 @@ func (m model) updateNormal(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.footerMsg = "No command to run"
 			return m, nil
 		}
+		m.previousState = m.state
 		m.state = stateRunningCmd
 		return m, m.runSelectedCommand()
 	case "s", "S":
 		m.state = stateFileBrowser
 		m.selectedFile = 0
 		m.reloadFiles()
-		m.footerMsg = "Navegador de Arquivos - [Setas] para navegar, [s] para sair, [r] para executar"
+		m.footerMsg = "File Browser - [Arrows] to navigate, [s] to exit, [r] to run"
 	case "?":
 		m.state = stateHelp
 	case "x", "X":
 		m.state = stateActionsPanel
 		m.selectedAction = 0
-		m.footerMsg = "Selecione uma ação"
+		m.footerMsg = "Select an action"
 	}
 	return m, nil
 }
@@ -101,8 +102,11 @@ func (m model) updateFileBrowser(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.state = stateNormal
 		m.footerMsg = ""
 	case "r", "R":
-		m.state = stateRunningCmd
-		return m, m.runSelectedCommand()
+		m.previousState = m.state
+		m.state = stateRunInPath
+		m.runInput.SetValue("")
+		m.footerMsg = "Enter command to run in current path"
+		return m, m.runInput.Focus()
 	}
 	return m, nil
 }
@@ -122,13 +126,11 @@ func (m model) updateActionsPanel(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.state = stateNormal
 		m.footerMsg = ""
 		switch selectedAction {
-		case "Adicionar Comando":
+		case "Add Command":
 			return m.updateNormal(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'a'}})
-		case "Editar Comando":
+		case "Edit Command":
 			return m.updateNormal(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'e'}})
-		case "Executar Comando":
-			return m.updateNormal(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'r'}})
-		case "Deletar Comando":
+		case "Delete Command":
 			return m.updateNormal(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'d'}})
 		}
 	case "esc", "x", "q":
@@ -136,6 +138,34 @@ func (m model) updateActionsPanel(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.footerMsg = ""
 	}
 	return m, nil
+}
+
+func (m model) updateRunInPath(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	var cmd tea.Cmd
+
+	switch msg.String() {
+	case "enter":
+		commandStr := strings.TrimSpace(m.runInput.Value())
+		if commandStr == "" {
+			m.state = stateFileBrowser
+			m.footerMsg = "Run cancelled. No command entered."
+			return m, nil
+		}
+		// Prepend command to output and clear input for next command
+		m.commandOutput = m.commandOutput + "\n> " + commandStr
+		m.previousState = m.state
+		m.state = stateRunningCmd
+		m.footerMsg = "Running command..."
+		return m, m.runCustomCommand(commandStr, m.runInput.Value())
+	case "esc", "q":
+		m.state = stateFileBrowser
+		m.footerMsg = "File Browser - [Arrows] to navigate, [s] to exit, [r] to run"
+		m.runInput.Blur()
+		return m, nil
+	}
+
+	m.runInput, cmd = m.runInput.Update(msg)
+	return m, cmd
 }
 
 func (m model) updateAdd(msg tea.KeyMsg) (tea.Model, tea.Cmd) {

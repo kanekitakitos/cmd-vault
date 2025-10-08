@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"bytes"
 	"os"
 	"os/exec"
 
@@ -33,18 +34,35 @@ func (m *model) reloadFiles() {
 func (m *model) runSelectedCommand() tea.Cmd {
 	return func() tea.Msg {
 		if len(m.commands) == 0 {
-			return cmdFinishedMsg{err: nil} // No command to run, just finish
+			return cmdFinishedMsg{err: nil, output: []byte("No command to run.")} // No command to run, just finish
 		}
 		c := m.commands[m.selected]
 		_ = m.store.IncrementUsage(c.ID)
 
+		var out bytes.Buffer
 		cmd := exec.Command("cmd", "/C", c.CommandStr) // #nosec G204
 		cmd.Dir = m.currentPath
-		cmd.Stdout = os.Stdout
-		cmd.Stderr = os.Stderr
+		cmd.Stdout = &out
+		cmd.Stderr = &out
 		cmd.Stdin = os.Stdin
 		err := cmd.Run()
 
-		return cmdFinishedMsg{err: err}
+		return cmdFinishedMsg{err: err, output: out.Bytes()}
+	}
+}
+
+// runCustomCommand executes a given command string in the current path.
+func (m *model) runCustomCommand(commandStr string, originalInput string) tea.Cmd {
+	return func() tea.Msg {
+		var out bytes.Buffer
+		cmd := exec.Command("cmd", "/C", commandStr) // #nosec G204
+		cmd.Dir = m.currentPath
+		cmd.Stdout = &out
+		cmd.Stderr = &out
+		cmd.Stdin = os.Stdin
+		err := cmd.Run()
+
+		// We don't increment usage as this is a one-off command
+		return cmdFinishedMsg{err: err, output: out.Bytes()}
 	}
 }

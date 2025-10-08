@@ -23,11 +23,13 @@ const (
 	stateConfirmCancel
 	stateRunningCmd
 	stateActionsPanel
+	stateRunInPath
 )
 
 // cmdFinishedMsg is sent when a command finishes running.
 type cmdFinishedMsg struct {
-	err error
+	err    error
+	output []byte
 }
 
 type model struct {
@@ -54,11 +56,15 @@ type model struct {
 	cmdInput  textinput.Model
 	noteInput textinput.Model
 
+	// input for one-off run
+	runInput textinput.Model
+
 	// temp for edit
 	editCommand *models.Command
 
 	// message / footer
-	footerMsg string
+	footerMsg     string
+	commandOutput string
 }
 
 func RunTUI(store *db.Store) error {
@@ -75,7 +81,7 @@ func initialModel(store *db.Store) model {
 	name.Placeholder = "name (unique)"
 	name.CharLimit = 64
 	name.Width = 30
-	// Define o foco inicial
+	// Set initial focus
 	name.Focus()
 
 	cmdi := textinput.New()
@@ -88,6 +94,11 @@ func initialModel(store *db.Store) model {
 	note.CharLimit = 512
 	note.Width = 60
 
+	run := textinput.New()
+	run.Placeholder = "command to run in current path..."
+	run.CharLimit = 256
+	run.Width = 60
+
 	wd, err := os.Getwd()
 	if err != nil {
 		wd = "." // Fallback to relative path on error
@@ -98,10 +109,12 @@ func initialModel(store *db.Store) model {
 		selected:       0,
 		state:          stateNormal,
 		nameInput:      name,
+		commandOutput:  "Command output will be shown here.",
 		cmdInput:       cmdi,
 		noteInput:      note,
+		runInput:       run,
 		currentPath:    wd,
-		actions:        []string{"Adicionar Comando", "Editar Comando", "Executar Comando", "Deletar Comando"},
+		actions:        []string{"Add Command", "Edit Command", "Delete Command"},
 		selectedAction: 0,
 	}
 
@@ -143,16 +156,26 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m.updateHelp(msg)
 		case stateActionsPanel:
 			return m.updateActionsPanel(msg)
+		case stateRunInPath:
+			return m.updateRunInPath(msg)
 		case stateRunningCmd: // ignore keys while running
 			return m, nil
 		}
 	case cmdFinishedMsg:
-		m.state = stateNormal
-		if msg.err != nil {
-			m.footerMsg = "Command failed: " + msg.err.Error()
+		if m.previousState == stateRunInPath {
+			m.state = stateRunInPath
 		} else {
-			m.footerMsg = "Command finished."
+			m.state = stateNormal
 		}
+		var outputStr string
+		if msg.err != nil {
+			m.footerMsg = "Command failed. See output panel."
+			outputStr = string(msg.output) + "\n\nError: " + msg.err.Error()
+		} else {
+			m.footerMsg = "Command finished successfully."
+			outputStr = string(msg.output)
+		}
+		m.commandOutput = outputStr
 		m.reloadCommands()
 		return m, nil
 	case tea.WindowSizeMsg:
