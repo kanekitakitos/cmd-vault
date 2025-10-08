@@ -52,7 +52,7 @@ func (m *model) runSelectedCommand() tea.Cmd {
 }
 
 // runCustomCommand executes a given command string in the current path.
-func (m *model) runCustomCommand(commandStr string, originalInput string) tea.Cmd {
+func (m *model) runCustomCommand(commandStr string) tea.Cmd {
 	return func() tea.Msg {
 		var out bytes.Buffer
 		cmd := exec.Command("cmd", "/C", commandStr) // #nosec G204

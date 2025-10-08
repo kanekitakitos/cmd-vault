@@ -66,8 +66,12 @@ func (m model) updateNormal(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.state = stateHelp
 	case "x", "X":
 		m.state = stateActionsPanel
-		m.selectedAction = 0
-		m.footerMsg = "Select an action"
+		m.state = stateContextHelp
+		m.footerMsg = "Press 'x' again to close help"
+	case "o", "O":
+		m.previousState = m.state
+		m.state = stateOutputFocus
+		m.footerMsg = "Output Focus - [↑/↓] to scroll, [Esc] or [o] to exit"
 	}
 	return m, nil
 }
@@ -106,6 +110,10 @@ func (m model) updateFileBrowser(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.state = stateRunInPath
 		m.runInput.SetValue("")
 		m.footerMsg = "Enter command to run in current path"
+		return m, m.runInput.Focus()
+	case "o", "O":
+		m.previousState = m.state
+		m.state = stateOutputFocus
 		return m, m.runInput.Focus()
 	}
 	return m, nil
@@ -152,11 +160,13 @@ func (m model) updateRunInPath(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		// Prepend command to output and clear input for next command
-		m.commandOutput = m.commandOutput + "\n> " + commandStr
+		newOutput := m.commandOutput + "\n> " + commandStr
+		m.commandOutput = newOutput
+		m.outputViewport.SetContent(newOutput)
 		m.previousState = m.state
 		m.state = stateRunningCmd
 		m.footerMsg = "Running command..."
-		return m, m.runCustomCommand(commandStr, m.runInput.Value())
+		return m, m.runCustomCommand(commandStr)
 	case "esc", "q":
 		m.state = stateFileBrowser
 		m.footerMsg = "File Browser - [Arrows] to navigate, [s] to exit, [r] to run"
@@ -166,6 +176,28 @@ func (m model) updateRunInPath(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 	m.runInput, cmd = m.runInput.Update(msg)
 	return m, cmd
+}
+
+func (m model) updateOutputFocus(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	var cmd tea.Cmd
+	switch msg.String() {
+	case "esc", "o", "O", "q":
+		m.state = m.previousState
+		if m.state == stateFileBrowser {
+			m.footerMsg = "File Browser - [Arrows] to navigate, [s] to exit, [r] to run"
+		} else {
+			m.footerMsg = ""
+		}
+	}
+	m.outputViewport, cmd = m.outputViewport.Update(msg)
+	return m, cmd
+}
+
+func (m model) updateContextHelp(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	// Any key press exits context help
+	m.state = stateNormal
+	m.footerMsg = ""
+	return m, nil
 }
 
 func (m model) updateAdd(msg tea.KeyMsg) (tea.Model, tea.Cmd) {

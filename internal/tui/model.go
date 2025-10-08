@@ -4,6 +4,7 @@ import (
 	"os"
 
 	"github.com/charmbracelet/bubbles/textinput"
+	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/kanekitakitos/cmd-vault/internal/db"
 	"github.com/kanekitakitos/cmd-vault/internal/models"
@@ -24,6 +25,8 @@ const (
 	stateRunningCmd
 	stateActionsPanel
 	stateRunInPath
+	stateOutputFocus
+	stateContextHelp
 )
 
 // cmdFinishedMsg is sent when a command finishes running.
@@ -65,6 +68,9 @@ type model struct {
 	// message / footer
 	footerMsg     string
 	commandOutput string
+
+	// viewport for scrolling output
+	outputViewport viewport.Model
 }
 
 func RunTUI(store *db.Store) error {
@@ -110,6 +116,7 @@ func initialModel(store *db.Store) model {
 		state:          stateNormal,
 		nameInput:      name,
 		commandOutput:  "Command output will be shown here.",
+		outputViewport: viewport.New(80, 20), // Will be resized
 		cmdInput:       cmdi,
 		noteInput:      note,
 		runInput:       run,
@@ -117,6 +124,7 @@ func initialModel(store *db.Store) model {
 		actions:        []string{"Add Command", "Edit Command", "Delete Command"},
 		selectedAction: 0,
 	}
+	m.outputViewport.SetContent(m.commandOutput)
 
 	m.reloadCommands()
 	m.reloadFiles()
@@ -136,7 +144,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if msg.String() == "ctrl+c" {
 			return m, tea.Quit
 		}
-		if msg.String() == "q" && m.state != stateAdd && m.state != stateEdit {
+		if msg.String() == "q" && m.state != stateAdd && m.state != stateEdit && m.state != stateRunInPath && m.state != stateOutputFocus {
 			return m, tea.Quit
 		}
 		switch m.state {
@@ -158,7 +166,11 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m.updateActionsPanel(msg)
 		case stateRunInPath:
 			return m.updateRunInPath(msg)
-		case stateRunningCmd: // ignore keys while running
+		case stateOutputFocus:
+			return m.updateOutputFocus(msg)
+		case stateContextHelp:
+			return m.updateContextHelp(msg)
+		case stateRunningCmd:
 			return m, nil
 		}
 	case cmdFinishedMsg:
@@ -175,12 +187,14 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.footerMsg = "Command finished successfully."
 			outputStr = string(msg.output)
 		}
-		m.commandOutput = outputStr
+		m.commandOutput = outputStr // Keep the full output
+		m.outputViewport.SetContent(outputStr)
 		m.reloadCommands()
 		return m, nil
 	case tea.WindowSizeMsg:
 		m.width = msg.Width
 		m.height = msg.Height
+		m.outputViewport.Width = m.width // Will be resized properly in view
 	}
 
 	return m, cmd
