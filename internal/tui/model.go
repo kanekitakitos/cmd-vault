@@ -27,6 +27,7 @@ const (
 	stateRunInPath
 	stateOutputFocus
 	stateContextHelp
+	stateSelectCmdToPaste
 )
 
 // cmdFinishedMsg is sent when a command finishes running.
@@ -170,6 +171,8 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m.updateOutputFocus(msg)
 		case stateContextHelp:
 			return m.updateContextHelp(msg)
+		case stateSelectCmdToPaste:
+			return m.updateSelectCmdToPaste(msg)
 		case stateRunningCmd:
 			return m, nil
 		}

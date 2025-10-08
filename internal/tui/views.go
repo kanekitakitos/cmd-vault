@@ -117,6 +117,9 @@ func (m model) viewFileBrowser() string {
 		selectedEntry = m.files[m.selectedFile]
 	}
 	fileDetailsContent := renderFileBrowserDetails(selectedEntry, rightPanelWidth-2)
+	if m.state == stateContextHelp {
+		fileDetailsContent = renderHelpContent()
+	}
 
 	var fileActionsContent string
 	if m.state == stateRunInPath {
@@ -277,11 +280,13 @@ type helpBinding struct {
 
 var helpBindings = []helpBinding{
 	{Key: "↑/k, ↓/j", Description: "Navigate lists"},
-	{Key: "r", Description: "Run selected command"},
+	{Key: "r", Description: "Run command (or enter mini-terminal)"},
 	{Key: "s", Description: "Open/close file browser"},
 	{Key: "o", Description: "Focus/scroll output panel"},
 	{Key: "a, e, d", Description: "Add, Edit, Delete command"},
-	{Key: "x", Description: "Show/hide this help"},
+	{Key: "c", Description: "Copy current path (in browser)"},
+	{Key: "p", Description: "Paste saved command (in mini-terminal)"},
+	{Key: "x", Description: "Show/hide contextual help"},
 	{Key: "q", Description: "Quit program"},
 }
 
@@ -319,5 +324,21 @@ func renderActionsPanel(actions []string, selected int) string {
 		b.WriteString("\n")
 	}
 	b.WriteString("\nUse ↑/↓ to navigate, Enter to select.")
+	return borderStyle.Render(lipgloss.NewStyle().Padding(1).Render(b.String()))
+}
+
+func renderSelectCmdToPaste(commands []models.Command, selected int) string {
+	var b strings.Builder
+	b.WriteString(titleStyle.Render("Select Command to Paste") + "\n\n")
+	for i, c := range commands {
+		style := lipgloss.NewStyle()
+		prefix := "  "
+		if i == selected {
+			style = style.Foreground(primaryColor).Bold(true)
+			prefix = "→ "
+		}
+		b.WriteString(style.Render(fmt.Sprintf("%s%s", prefix, c.Name)) + "\n")
+	}
+	b.WriteString("\nUse ↑/↓ to navigate, Enter to paste, Esc to cancel.")
 	return borderStyle.Render(lipgloss.NewStyle().Padding(1).Render(b.String()))
 }

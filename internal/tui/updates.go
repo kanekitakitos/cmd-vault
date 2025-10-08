@@ -1,10 +1,12 @@
 package tui
 
 import (
+	"fmt"
 	"path/filepath"
 	"strings"
 	"time"
 
+	"github.com/atotto/clipboard"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/kanekitakitos/cmd-vault/internal/models"
 )
@@ -65,6 +67,7 @@ func (m model) updateNormal(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "?":
 		m.state = stateHelp
 	case "x", "X":
+		m.previousState = m.state
 		m.state = stateActionsPanel
 		m.state = stateContextHelp
 		m.footerMsg = "Press 'x' again to close help"
@@ -115,6 +118,14 @@ func (m model) updateFileBrowser(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.previousState = m.state
 		m.state = stateOutputFocus
 		return m, m.runInput.Focus()
+	case "x", "X":
+		m.previousState = m.state
+		m.state = stateContextHelp
+		m.footerMsg = "Press 'x' again to close help"
+	case "c", "C":
+		clipboard.WriteAll(m.currentPath)
+		m.footerMsg = fmt.Sprintf("Path copied: %s", m.currentPath)
+
 	}
 	return m, nil
 }
@@ -172,6 +183,10 @@ func (m model) updateRunInPath(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.footerMsg = "File Browser - [Arrows] to navigate, [s] to exit, [r] to run"
 		m.runInput.Blur()
 		return m, nil
+	case "p", "P":
+		m.previousState = m.state
+		m.state = stateSelectCmdToPaste
+		return m, nil
 	}
 
 	m.runInput, cmd = m.runInput.Update(msg)
@@ -195,8 +210,37 @@ func (m model) updateOutputFocus(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 func (m model) updateContextHelp(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	// Any key press exits context help
-	m.state = stateNormal
-	m.footerMsg = ""
+	m.state = m.previousState
+	if m.state == stateFileBrowser {
+		m.footerMsg = "File Browser - [Arrows] to navigate, [s] to exit, [r] to run"
+	} else {
+		m.footerMsg = ""
+	}
+	return m, nil
+}
+
+func (m model) updateSelectCmdToPaste(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch msg.String() {
+	case "up", "k":
+		if m.selected > 0 {
+			m.selected--
+		}
+	case "down", "j":
+		if m.selected < len(m.commands)-1 {
+			m.selected++
+		}
+	case "enter":
+		if len(m.commands) > 0 {
+			selectedCmd := m.commands[m.selected]
+			currentInput := m.runInput.Value()
+			m.runInput.SetValue(currentInput + selectedCmd.CommandStr)
+			m.runInput.SetCursor(len(m.runInput.Value()))
+		}
+		m.state = m.previousState // Go back to stateRunInPath
+	case "esc", "q", "p":
+		m.state = m.previousState // Go back to stateRunInPath
+	}
+
 	return m, nil
 }
 
