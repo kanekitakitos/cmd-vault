@@ -37,12 +37,10 @@ func (m model) viewVertical() string {
 	availableHeight := m.height - 4
 	// Subtract a margin to prevent panels from touching the window edges
 	panelWidth := m.width - 2
-	listHeight := availableHeight / 4
-	detailsHeight := availableHeight / 4
-	outputHeight := availableHeight - listHeight - detailsHeight
 
 	listContent := renderList(m.commands, m.selected, panelWidth-4)
-	listPanel := panelStyle.Copy().Width(panelWidth).Height(listHeight).Render(listContent)
+	listPanelRendered := panelStyle.Copy().Width(panelWidth).Render(listContent)
+	listHeight := lipgloss.Height(listPanelRendered)
 
 	detailsContent := "No commands"
 	if len(m.commands) > 0 {
@@ -50,8 +48,10 @@ func (m model) viewVertical() string {
 	} else if m.state == stateContextHelp {
 		detailsContent = renderHelpContent()
 	}
-	detailsPanel := panelStyle.Copy().Width(panelWidth).Height(detailsHeight).Render(detailsContent)
+	detailsPanelRendered := panelStyle.Copy().Width(panelWidth).Render(detailsContent)
+	detailsHeight := lipgloss.Height(detailsPanelRendered)
 
+	outputHeight := availableHeight - listHeight - detailsHeight + 1 // +1 to compensate for joining borders
 	outputPanelStyle := panelStyle.Copy().Width(panelWidth).Height(outputHeight)
 	if m.state == stateOutputFocus {
 		outputPanelStyle = outputPanelStyle.BorderForeground(secondaryColor)
@@ -61,7 +61,7 @@ func (m model) viewVertical() string {
 	outputPanel := outputPanelStyle.Render(m.outputViewport.View())
 
 	// Center the vertical layout
-	return lipgloss.PlaceHorizontal(m.width, lipgloss.Center, lipgloss.JoinVertical(lipgloss.Left, listPanel, detailsPanel, outputPanel))
+	return lipgloss.PlaceHorizontal(m.width, lipgloss.Center, lipgloss.JoinVertical(lipgloss.Left, listPanelRendered, detailsPanelRendered, outputPanel))
 }
 
 func (m model) viewNormalHorizontal() string {
@@ -84,9 +84,10 @@ func (m model) viewNormalHorizontal() string {
 		detailsContent = renderHelpContent()
 	}
 
-	detailsHeight := mainPanelHeight / 3
-	outputHeight := mainPanelHeight - detailsHeight
-	detailsPanel := panelStyle.Copy().Width(rightPanelWidth).Height(detailsHeight).Render(detailsContent)
+	detailsPanelRendered := panelStyle.Copy().Width(rightPanelWidth).Render(detailsContent)
+	detailsHeight := lipgloss.Height(detailsPanelRendered)
+	outputHeight := mainPanelHeight - detailsHeight + 1 // +1 to compensate for joining borders
+	detailsPanel := detailsPanelRendered                // Use the already rendered panel
 
 	outputPanelStyle := panelStyle.Copy().Width(rightPanelWidth).Height(outputHeight)
 	if m.state == stateOutputFocus {
@@ -128,15 +129,11 @@ func (m model) viewFileBrowser() string {
 		fileActionsContent = "  [Arrows] Navigate   [s] Exit   [r] Run here"
 	}
 
-	detailsHeight := (mainPanelHeight / 2) - 2
-	outputHeight := mainPanelHeight - detailsHeight - 2
+	detailsPanelRendered := panelStyle.Copy().Width(rightPanelWidth).Render(fileDetailsContent)
+	detailsHeight := lipgloss.Height(detailsPanelRendered)
+	outputHeight := mainPanelHeight - detailsHeight + 1 // +1 to compensate for joining borders
 
-	detailsPanel := panelStyle.Copy().
-		Width(rightPanelWidth).
-		Height(detailsHeight).
-		Render(fileDetailsContent)
-
-	outputPanelStyle := panelStyle.Copy().Width(rightPanelWidth).Height(outputHeight)
+	outputPanelStyle := panelStyle.Copy().Width(rightPanelWidth).Height(outputHeight).UnsetHeight()
 	if m.state == stateOutputFocus {
 		outputPanelStyle = outputPanelStyle.BorderForeground(secondaryColor)
 	}
@@ -145,12 +142,12 @@ func (m model) viewFileBrowser() string {
 
 	var outputContent string
 	if m.state == stateRunInPath {
-		outputContent = m.outputViewport.View() + "\n" + fileActionsContent
+		outputContent = lipgloss.JoinVertical(lipgloss.Left, m.outputViewport.View(), fileActionsContent)
 	} else {
 		outputContent = m.outputViewport.View()
 	}
 	outputPanel := outputPanelStyle.Render(outputContent)
-	rightPanel := lipgloss.JoinVertical(lipgloss.Left, detailsPanel, outputPanel)
+	rightPanel := lipgloss.JoinVertical(lipgloss.Left, detailsPanelRendered, outputPanel)
 	return lipgloss.PlaceHorizontal(m.width, lipgloss.Center, lipgloss.JoinHorizontal(lipgloss.Top, leftPanel, rightPanel))
 }
 

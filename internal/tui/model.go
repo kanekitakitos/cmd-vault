@@ -3,6 +3,8 @@ package tui
 import (
 	"os"
 
+	"github.com/charmbracelet/lipgloss"
+
 	"github.com/charmbracelet/bubbles/textinput"
 	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
@@ -67,8 +69,9 @@ type model struct {
 	editCommand *models.Command
 
 	// message / footer
-	footerMsg     string
-	commandOutput string
+	footerMsg        string
+	commandOutput    string // This will hold the wrapped output
+	rawCommandOutput string // This will hold the original, unwrapped output
 
 	// viewport for scrolling output
 	outputViewport viewport.Model
@@ -112,18 +115,19 @@ func initialModel(store *db.Store) model {
 	}
 
 	m := model{
-		store:          store,
-		selected:       0,
-		state:          stateNormal,
-		nameInput:      name,
-		commandOutput:  "Command output will be shown here.",
-		outputViewport: viewport.New(80, 20), // Will be resized
-		cmdInput:       cmdi,
-		noteInput:      note,
-		runInput:       run,
-		currentPath:    wd,
-		actions:        []string{"Add Command", "Edit Command", "Delete Command"},
-		selectedAction: 0,
+		store:            store,
+		selected:         0,
+		state:            stateNormal,
+		nameInput:        name,
+		commandOutput:    "Command output will be shown here.",
+		rawCommandOutput: "Command output will be shown here.",
+		outputViewport:   viewport.New(80, 20), // Will be resized
+		cmdInput:         cmdi,
+		noteInput:        note,
+		runInput:         run,
+		currentPath:      wd,
+		actions:          []string{"Add Command", "Edit Command", "Delete Command"},
+		selectedAction:   0,
 	}
 	m.outputViewport.SetContent(m.commandOutput)
 
@@ -184,20 +188,30 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		var outputStr string
 		if msg.err != nil {
-			m.footerMsg = "Command failed. See output panel."
+			m.footerMsg = "" // Remove footer message on failure
 			outputStr = string(msg.output) + "\n\nError: " + msg.err.Error()
 		} else {
-			m.footerMsg = "Command finished successfully."
+			m.footerMsg = "" // Remove footer message on success
 			outputStr = string(msg.output)
 		}
-		m.commandOutput = outputStr // Keep the full output
-		m.outputViewport.SetContent(outputStr)
+
+		m.rawCommandOutput = outputStr // Store the raw, unwrapped output
+
+		// Wrap the output string to fit the panel width to prevent breaking the layout.
+		outputPanelWidth := m.getOutputPanelWidth()
+		wrappedOutput := lipgloss.NewStyle().Width(outputPanelWidth).Render(outputStr)
+
+		m.commandOutput = wrappedOutput // Keep the full, wrapped output for now
+		m.outputViewport.SetContent(wrappedOutput)
+		m.outputViewport.GotoTop() // Scroll to top to see the new output
 		m.reloadCommands()
 		return m, nil
 	case tea.WindowSizeMsg:
 		m.width = msg.Width
 		m.height = msg.Height
-		m.outputViewport.Width = m.width // Will be resized properly in view
+		// Re-wrap the output content on window resize
+		outputPanelWidth := m.getOutputPanelWidth()
+		m.outputViewport.SetContent(lipgloss.NewStyle().Width(outputPanelWidth).Render(m.rawCommandOutput))
 	}
 
 	return m, cmd
@@ -210,6 +224,24 @@ func (m model) View() string {
 	}
 
 	return m.renderView()
+}
+
+// getOutputPanelWidth calculates the width of the output panel based on the current view mode and window size.
+// This is used to wrap long lines in the command output correctly.
+func (m *model) getOutputPanelWidth() int {
+	// These calculations mirror the logic in views.go
+	const panelPadding = 2 // 1 padding on each side
+	const verticalLayoutBreakpoint = 80
+
+	if m.state == stateFileBrowser || m.state == stateRunInPath || (m.state == stateRunningCmd && m.previousState == stateRunInPath) {
+		leftPanelWidth := int(float32(m.width) * 0.35)
+		return m.width - 4 - leftPanelWidth - panelPadding
+	} else if m.width < verticalLayoutBreakpoint {
+		return m.width - 2 - panelPadding
+	} else { // Normal Horizontal
+		leftPanelWidth := int(float32(m.width-4) * 0.35)
+		return (m.width - 4) - leftPanelWidth - panelPadding
+	}
 }
 
 // helper

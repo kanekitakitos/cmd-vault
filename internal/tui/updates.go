@@ -176,9 +176,8 @@ func (m model) updateRunInPath(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.outputViewport.SetContent(newOutput)
 		m.previousState = m.state
 		m.state = stateRunningCmd
-		m.footerMsg = "Running command..."
 		return m, m.runCustomCommand(commandStr)
-	case "esc", "q":
+	case "esc", "alt+q":
 		m.state = stateFileBrowser
 		m.footerMsg = "File Browser - [Arrows] to navigate, [s] to exit, [r] to run"
 		m.runInput.Blur()
